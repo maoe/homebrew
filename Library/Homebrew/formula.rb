@@ -224,7 +224,14 @@ class Formula
   end
 
   def fails_with_llvm?
-    self.class.fails_with_llvm_reason || false
+    llvm = self.class.fails_with_llvm_reason
+    if llvm
+      if llvm.build
+        MacOS.llvm_build_version <= llvm.build.to_i
+      else
+        true
+      end
+    end
   end
 
   # sometimes the clean process breaks things
@@ -251,9 +258,21 @@ class Formula
         # so load any deps before this point! And exit asap afterwards
         yield self
       rescue Interrupt, RuntimeError, SystemCallError => e
-        raise unless ARGV.debug?
+        unless ARGV.debug?
+          logs = File.expand_path '~/Library/Logs/Homebrew/'
+          if File.exist? 'config.log'
+            mkdir_p logs
+            mv 'config.log', logs
+          end
+          if File.exist? 'CMakeLists.txt'
+            mkdir_p logs
+            mv 'CMakeLists.txt', logs
+          end
+          raise
+        end
         onoe e.inspect
         puts e.backtrace
+
         ohai "Rescuing build..."
         if (e.was_running_configure? rescue false) and File.exist? 'config.log'
           puts "It looks like an autotools configure failed."
@@ -296,23 +315,19 @@ class Formula
   end
 
   def handle_llvm_failure llvm
-    unless ENV.use_llvm? or ENV.use_clang?
-      ENV.gcc_4_2 if MacOS.default_cc =~ /llvm/
+    case ENV.compiler
+    when :llvm, :clang
+      opoo "LLVM was requested, but this formula is reported to not work with LLVM:"
+      puts
+      puts llvm.reason
+      puts
+      puts "We are continuing anyway so if the build succeeds, please let us know so we"
+      puts "can update the formula. If it doesn't work you can: brew install --use-gcc"
+      puts
+    else
+      ENV.gcc if MacOS.default_cc =~ /llvm/
       return
     end
-
-    opoo "LLVM was requested, but this formula is reported as not working with LLVM:"
-    puts llvm.reason
-
-    if ARGV.force?
-      puts "Continuing anyway.\n" +
-           "If this works, let us know so we can update the formula to remove the warning."
-    else
-      puts "Continuing with GCC 4.2 instead.\n"+
-           "(Use `brew install --force #{name}` to force use of LLVM.)"
-      ENV.gcc_4_2
-    end
-    puts
   end
 
   def self.class_s name
@@ -598,10 +613,12 @@ EOF
 
     return if patch_list.empty?
 
-    ohai "Downloading patches"
-    # downloading all at once is much more efficient, especially for FTP
-    patches = patch_list.collect{|p| p[:curl_args]}.select{|p| p}.flatten
-    curl(*patches)
+    external_patches = patch_list.collect{|p| p[:curl_args]}.select{|p| p}.flatten
+    unless external_patches.empty?
+      ohai "Downloading patches"
+      # downloading all at once is much more efficient, especially for FTP
+      curl(*external_patches)
+    end
 
     ohai "Patching"
     patch_list.each do |p|
