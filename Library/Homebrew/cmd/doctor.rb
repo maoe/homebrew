@@ -214,6 +214,13 @@ def check_gcc_versions
       EOS
     end
   end
+
+  unless File.exist? '/usr/bin/cc'
+    puts <<-EOS.undent
+      You have no /usr/bin/cc. This will cause numerous build issues. Please
+      reinstall Xcode.
+    EOS
+  end
 end
 
 def __check_subdir_access base
@@ -309,6 +316,18 @@ def check_homebrew_prefix
       You can install Homebrew anywhere you want, but some brews may only work
       You can install Homebrew anywhere you want, but some brews may only build
       correctly if you install to /usr/local.
+
+    EOS
+  end
+end
+
+def check_xcode_prefix
+  prefix = MacOS.xcode_prefix
+  return if prefix.nil?
+  if prefix.to_s.match(' ')
+    puts <<-EOS.undent
+      Xcode is installed to a folder with a space in the name.
+      This may cause some formulae, such as libiconv, to fail to build.
 
     EOS
   end
@@ -492,7 +511,7 @@ end
 def check_for_dyld_vars
   if ENV['DYLD_LIBRARY_PATH']
     puts <<-EOS.undent
-      Setting DYLD_LIBARY_PATH can break dynamic linking.
+      Setting DYLD_LIBRARY_PATH can break dynamic linking.
       You should probably unset it.
 
     EOS
@@ -738,6 +757,7 @@ module Homebrew extend self
     begin
       check_usr_bin_ruby
       check_homebrew_prefix
+      check_xcode_prefix
       check_for_macgpg2
       check_for_stray_dylibs
       check_for_stray_static_libs
